@@ -61,8 +61,23 @@ class V3Tests(unittest.TestCase):
         r=d.knowledge.read_units(pack,[unit['id']]);self.assertEqual(r['items'][0]['text'],'Service shall register.')
         self.assertTrue(r['items'][0]['interpretation_annotations'])
         q=d.query(pack,'register');self.assertTrue(any(x.get('interpretation_annotations') for x in q['results']))
-        md=next((pack/'text').glob('*.md')).read_text();self.assertIn('不属于原文',md)
+        md=next((pack/'text').glob('*.md')).read_text();self.assertIn('not source text',md)
         d.knowledge.validate_reference({'unit_id':unit['id'],'quote':unit['text']},d.knowledge.project(pack))
+    def test_legacy_annotation_migration_is_idempotent_and_preserves_source(self):
+        src=self.root/'formatted.docx'
+        original='审批 requires approval.'
+        archive(src,{'word/document.xml':f'<w:document xmlns:w="{W[1:-1]}"><w:body><w:p><w:r><w:rPr><w:strike/></w:rPr><w:t>{original}</w:t></w:r></w:p></w:body></w:document>'})
+        pack=self.root/'pack';d.build([str(src)],pack,'Mixed-language evidence',renderer='none')
+        source=d.read_json(pack/'manifest.json')['sources'][0]
+        reading=pack/source['reading']['path'];expected=reading.read_text()
+        reading.write_text(expected.replace('Formatting/interpretation annotations (not source text): ','格式/解释提示（不属于原文）：'))
+        d.knowledge.enhance_docx(pack,source)
+        self.assertEqual(reading.read_text(),expected)
+        d.knowledge.enhance_docx(pack,source)
+        self.assertEqual(reading.read_text(),expected)
+        paragraphs=d.read_json(pack/source['structure']['path'])['paragraphs']
+        self.assertEqual(paragraphs[0]['text'],original)
+        self.assertEqual(d.digest(src.read_bytes()),source['original']['sha256'])
     def test_checkpoint_same_size_and_mtime_journal_tamper_rejected(self):
         pack=self.textpack();k=d.knowledge;u=next(u for u in k.project(pack)['units'].values() if u['required'])
         r=k.read_units(pack,[u['id']]);k.commit(pack,{'expected_revision':0,'model':'Fixture model','receipt_ids':[r['receipt_id']],

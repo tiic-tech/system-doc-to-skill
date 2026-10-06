@@ -250,7 +250,7 @@ class PackageTests(unittest.TestCase):
         source = d.read_json(pack / "manifest.json")["sources"][0]
         reading = (pack / source["reading"]["path"]).read_text()
         self.assertNotIn("## word/header1.xml", reading)
-        self.assertLess(reading.index("Generic technical workflow"), reading.index("页眉、页脚与注释正文"))
+        self.assertLess(reading.index("Generic technical workflow"), reading.index("Header, footer, and note text"))
         structure = d.read_json(pack / source["structure"]["path"])
         self.assertTrue(any(p["part"] == "word/header1.xml" and p["text"] == "Controlled header" for p in structure["paragraphs"]))
 

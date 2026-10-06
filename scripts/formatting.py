@@ -95,4 +95,4 @@ def visible_annotations(paragraph):
 def markdown_note(paragraph):
     annotations=visible_annotations(paragraph)
     if not annotations:return ''
-    return '\n\n> 格式/解释提示（不属于原文）：'+json.dumps(annotations,ensure_ascii=False)+'\n'
+    return '\n\n> Formatting/interpretation annotations (not source text): '+json.dumps(annotations,ensure_ascii=False)+'\n'

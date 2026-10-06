@@ -1,27 +1,27 @@
-# 文档类型规则
+# Document-type rules
 
-按实际类型读取相应章节。文件格式与业务类型分开；混合文档按章节采用不同规则。类型未知时标记不确定，不推断来源权威。
+Select rules by actual content. File format and business document type are separate; apply different rules by section in mixed documents. Mark unknown types as uncertain and do not infer source authority.
 
-## 通用技术文档
+## General technical documents
 
-架构、接口规范、设计、实施、运维或混合材料不强行转成业务需求。按来源内容组织组件、接口、数据、约束、过程、配置、异常和开放问题。代码、表格、公式、图像与原生附件保持独立定位；缺少某类别不创建虚构条目。复杂度没有预设章节/表格上限，按章节和对象分批读取。
+Do not force architecture, interface, design, implementation, operations, or mixed materials into business requirements. Organize components, interfaces, data, constraints, processes, configuration, exceptions, and open questions according to the source. Keep code, tables, formulas, images, and native attachments independently locatable. Do not invent absent categories. Read in batches by section and object without a fixed chapter/table limit.
 
 ## RFP
 
-范围、强制/可选要求、交付物、响应方式、评审、验收及采购约束。背景、要求、示例分开；视觉分析补充不能变成招标强制项。
+Capture scope, mandatory/optional requirements, deliverables, response instructions, evaluation, acceptance, and procurement constraints. Distinguish background, requirements, and examples. Supplemental visual interpretation cannot become a mandatory tender requirement.
 
-## TP：投标技术方案
+## TP: technical proposal for a tender
 
-技术响应、方案、供应商承诺、假设、客户依赖、排除、偏离、里程碑及交付边界。明确/部分/未响应和实际满足是不同判断；描述不证明实现能力。与 RFP 匹配为候选，记录依据和未确认覆盖。成本、性能、部署和服务级别保留限定条件。
+Capture technical responses, solution design, supplier commitments, assumptions, customer dependencies, exclusions, deviations, milestones, and delivery boundaries. Explicit, partial, or missing responses differ from actual compliance; a description does not prove implementation capability. Treat RFP matches as candidates with evidence and unconfirmed coverage. Preserve qualifications on cost, performance, deployment, and service levels.
 
 ## BRD
 
-目标、角色、权限、业务规则、状态、审批、定价、数据、接口、异常及待确认。图中条件、回路和图注关联正文；矩阵中的资产类型、单位、金额档位与审批层一起解释。批注、business to confirm、空值和明确 No 分开；重复 FR 编号保留原编号，用来源定位区别。
+Capture objectives, roles, permissions, business rules, states, approvals, pricing, data, interfaces, exceptions, and unresolved issues. Relate diagram conditions, loops, and captions to the text. Interpret matrix asset types, units, amount bands, and approval tiers together. Distinguish comments, "business to confirm", blanks, and explicit "No". Preserve repeated FR identifiers and distinguish them with source locations.
 
 ## PRD
 
-用户目标、功能、页面交互、字段、权限、异常、非功能要求及验收。界面图可以是证据，静态截图不证明交互逻辑；未显示的错误态/权限态保留为待确认。
+Capture user goals, functionality, page interactions, fields, permissions, exceptions, nonfunctional requirements, and acceptance. UI images can be evidence; static screenshots do not prove interaction logic. Keep undisplayed error/permission states unresolved.
 
-## 跨文档
+## Across documents
 
-RFP 要求、TP 承诺、BRD 规则和 PRD 行为建立关联，不自动确定优先级。原文、图中观察、推断和建议分开。冲突保留双方出处、版本、日期、对象与影响；只有项目治理规则才能决定生效解释。
+Relate RFP requirements, TP commitments, BRD rules, and PRD behavior without assigning automatic priority. Separate source text, visual observations, inferences, and suggestions. Preserve both sides of conflicts with locations, versions, dates, objects, and impact. Only explicit project governance rules can resolve which interpretation takes effect.

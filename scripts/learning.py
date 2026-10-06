@@ -185,7 +185,7 @@ def enhance_docx(root, source):
         reading=e.safe_path(root,source["reading"]["path"])
         raw=reading.read_text(encoding="utf-8")
         # Reinitialization replaces annotation projection rather than accumulating it.
-        raw=re.sub(r"\n\n> 格式/解释提示（不属于原文）：[^\n]*\n", "", raw)
+        raw=re.sub(r"\n\n> (?:Formatting/interpretation annotations \(not source text\): |\u683c\u5f0f/\u89e3\u91ca\u63d0\u793a\uff08\u4e0d\u5c5e\u4e8e\u539f\u6587\uff09\uff1a)[^\n]*\n", "", raw)
         for paragraph in data["paragraphs"]:
             if paragraph["part"]=="word/document.xml":
                 anchor="<div id=\""+paragraph["id"]+"\">"

@@ -1,3 +1,3 @@
 interface:
-  display_name: "系统开发文档拆解与深读"
-  short_description: "复杂技术文档的全文两阶段阅读、证据检索与持续知识更新，支持有出处的多模态问答"
+  display_name: "system-doc-to-skill"
+  short_description: "Deep document reading, traceable Q&A, and knowledge updates"

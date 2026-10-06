@@ -1,45 +1,46 @@
-# 多模态持续解读
+# Continuing multimodal interpretation
 
-## 检索与实际查看
+## Retrieval and actual viewing
 
-1. 检查 verify 结果及来源版本；首次读视觉目录，发现文字索引尚未描述的图和 pending 对象。
-2. 用章节、图注、上下文、原生文字定位候选，不把搜索未命中当作图中没有规则。
-3. show 返回图像绝对路径，用当前宿主的图像工具把像素送入模型。Codex 通常使用可用的 view_image；Claude/其他宿主用其图像读取或附件机制，不硬编码不存在的工具名。
-4. 先看全图确定边界、角色、方向和注释；小字按需 crop。跨区域箭头查看两个端点和完整连线，不只看一个局部。
-5. 与正文、批注、native sidecar 核对；审批、权限、金额、期限、循环上限必须保留限定语。
-6. 输出观察、业务解释、未知及出处；建议验收或设计另列，不升格为来源要求。
+1. Check `verify` and source versions. On first use, inspect the visual index for undescribed images and `pending` objects.
+2. Locate candidates by section, caption, context, and native text. A search miss does not establish that a diagram contains no rule.
+3. `show` returns absolute image paths. Send actual pixels to the model using an available host image tool. Codex may offer `view_image`; Claude/other hosts use their own image or attachment mechanism. Do not invent tool names.
+4. Inspect the whole image for boundaries, roles, direction, and notes, then `crop` small text as needed. For cross-region arrows, inspect both endpoints and the complete connecting line.
+5. Cross-check body text, comments, and native sidecars. Preserve qualifications on approvals, permissions, amounts, deadlines, and loop limits.
+6. Report observations, business interpretations, unknowns, and locations separately. Acceptance/design suggestions are not source requirements.
 
-无图像工具时列出问题、阅读版本路径、辅助数据与未核验边界，不声称视觉核验。不另接付费 API 或自动上传包。
+Without an image tool, list questions, rendition paths, auxiliary data, and unchecked boundaries. Do not claim visual verification. Do not add a paid API chain or automatically upload the package.
 
-## 持续记录
+## Persistent records
 
-使用 [动态更新协议](dynamic-updates.md) 的新版事务，不依赖聊天历史。visual_reads 必须保存 rendition_id、sha256、实际 tool 和具体 observation；重要观察分别绑定 visual 单元，必要时增加原图像素 bbox。read receipt 只证明材料已返回，不能代替看图。
+Use transactions from the [dynamic update protocol](dynamic-updates.md), rather than relying on chat history. Each `visual_reads` item needs `rendition_id`, `sha256`, the actual `tool`, and a concrete `observation`. Bind important observations individually to visual units, optionally including a bounding box in original image pixels. Read receipts prove returned materials, not image viewing.
 
-```json
+~~~json
 {
   "expected_revision": 0,
-  "model": "实际宿主/模型；版本未知则注明",
+  "model": "Actual host/model; state when the exact version is unknown",
   "receipt_ids": ["Q..."],
-  "visual_reads": [{"rendition_id": "R...", "sha256": "实际哈希", "tool": "实际工具", "observation": "本次看到的节点、箭头、注释与边界"}],
+  "visual_reads": [{"rendition_id": "R...", "sha256": "ACTUAL_HASH", "tool": "ACTUAL_TOOL", "observation": "Nodes, arrows, notes, and boundaries actually observed"}],
   "records": [{
-    "kind": "process", "name": "流程名", "scope": "具体来源及范围",
-    "claims": [{"content": "限定范围的观察", "authority": "visual_observation", "evidence": [{"unit_id": "U..."}]}],
-    "review_status": "source_checked", "review_notes": "实际核对的图及正文，未核验部分另列", "unknowns": []
+    "kind": "process", "name": "Process name", "scope": "Specific source and scope",
+    "claims": [{"content": "Scoped observation", "authority": "visual_observation", "evidence": [{"unit_id": "U..."}]}],
+    "review_status": "source_checked", "review_notes": "Images and text actually checked; list unchecked parts separately", "unknowns": []
   }]
 }
-```
+~~~
 
-示例 ID 不可直接提交。unreviewed 是候选；source_checked 是已核对决定性出处、条件及反证的宿主声明；human_reviewed 须有实际人工 reviewer；needs_revalidation 不能作为当前已核验结论。source_checked 不代表业务方批准，模型一致不证明真实。
+Example IDs are not valid submission data. `unreviewed` denotes a candidate. `source_checked` declares host checks of decisive sources, conditions, and counterevidence. `human_reviewed` needs an actual human `reviewer`; `needs_revalidation` cannot serve as a current verified conclusion. Source checking is not business approval, and model agreement does not prove truth.
 
-绑定上下文来源、资产与图像依赖，避免图相同而上下文变化时错误复用。旧版 question/interpretation/dependencies 格式仅用于兼容历史记录，不自动增加新知识或阅读覆盖。脚本无法审计宿主工具历史，也不能证明解释正确。
+Bind contextual source, asset, and image dependencies so unchanged images are not incorrectly reused after context changes. Legacy `question`/`interpretation`/`dependencies` records remain compatible without automatically increasing atomic knowledge or reading coverage. Scripts cannot audit host tool history or prove interpretations correct.
 
-## 视觉边界
+## Visual boundaries
 
-小字不清、已压缩、截图截断、交叉箭头、线型/颜色规则、字体替换及隐藏层：保留原件和未知，再导出/裁剪；模型不能恢复原图不存在的细节。PDF 服务器缩放不保证坐标精度，需要定位时使用包中明确尺寸图像。
+For illegible small text, compression, clipped screenshots, crossing arrows, line/color conventions, font substitution, or hidden layers, preserve originals and unknowns, then re-export or crop. A model cannot recover details absent from the supplied original. PDF server scaling does not guarantee coordinate precision; use package images with explicit dimensions for localization.
 
-局部截图不替代原生 Excel 单元格、隐藏数据或 Visio 其他页的证据。
+A cropped screenshot does not replace evidence from native Excel cells, hidden data, or other Visio pages.
 
-官方能力边界：
-- [OpenAI 文件输入](https://developers.openai.com/api/docs/guides/file-inputs)：非 PDF 内嵌图片不自动进入图像上下文。
-- [Claude 文件上传](https://support.claude.com/en/articles/8241126-upload-files-to-claude)：非 PDF 内嵌图像不能依赖普通文字提取。
-- [Claude 坐标说明](https://platform.claude.com/docs/en/build-with-claude/vision-coordinates)：缩放和估计坐标需映射与复核。
+Official capability boundaries:
+
+- [OpenAI file inputs](https://developers.openai.com/api/docs/guides/file-inputs): embedded images in non-PDF files do not automatically enter image context.
+- [Claude file uploads](https://support.claude.com/en/articles/8241126-upload-files-to-claude): ordinary text extraction is insufficient for embedded non-PDF images.
+- [Claude vision coordinates](https://platform.claude.com/docs/en/build-with-claude/vision-coordinates): scaling and estimated coordinates require mapping and verification.

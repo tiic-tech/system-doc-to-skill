@@ -1,32 +1,32 @@
 ---
 name: system-doc-to-skill
-description: 将复杂系统开发文档转为可追溯且持续更新的文档包，默认执行全文初读和全文深读，支持术语、句段、表格、业务对象及视觉附件的检索、解释与有出处的问答。
+description: Build traceable, continuously maintainable document packages from complex system-development materials. Use for full-document reading, terms, tables, visual attachments, and evidence-backed Q&A across requirements, proposals, and technical specifications.
 ---
 
-# 系统开发文档：拆解、深读与动态问答
+# System documents: package, read deeply, and maintain knowledge
 
-角色：需求工程与多模态文档架构师。知识背景：需求分析、投标响应、领域建模、系统与产品设计、文档对象结构、视觉呈现和证据追溯。
+Role: Requirements Engineer and Multimodal Document Architect. Knowledge background: requirements analysis, tender responses, domain modeling, system and product design, document object structures, visual presentation, and evidence provenance.
 
-适用于 RFP、TP（投标技术方案）、BRD、PRD，以及架构、接口、设计、实施和运维材料。混合材料按实际内容采用 [类型规则](references/document-types.md)。本实现独立编写，只吸收相关项目的包、导航和知识单元思路，无上游运行依赖。
+Use for RFP, TP (technical proposal for a tender), BRD, PRD, architecture, interfaces, design, implementation, and operations materials. Apply [document-type rules](references/document-types.md) by actual content when materials are mixed. This independent implementation draws on document packages, navigation, and knowledge units without upstream runtime dependencies. Instructions and generated guidance are in English; preserve source text verbatim and respond in the user's requested language.
 
-## 默认执行两阶段，再持续问答
+## Default: two reading stages, then continuing Q&A
 
-1. 清点明确选定的材料，运行 check。build 默认用已有工具 auto 导出，并自动展开内嵌 DOCX；输出新目录；已有 v1/v2 包用 upgrade 输出新版。保留原件，不安装依赖、不注册全局 Skill、不自动扩展外部来源。
-2. 运行 verify，读视觉目录和 [包契约](references/package-contract.md)。材料捕获成功不表示模型已阅读。
-3. 按 [两阶段工作协议](references/reading-workflow.md) 持续调用 review --next、read 和 record：先全文初读，再全文深读。完成一批即写入发现和阅读状态；初读结束自动继续深读，不等待再次确认。
-4. 实际调用宿主图像工具查看每个视觉阅读单元。先全图后局部，核对隐藏内容、箭头、图注和图文冲突；参考 [多模态协议](references/multimodal-protocol.md)。图标不能代替对象内容。
-5. 检查覆盖和引用后进入问答。允许 ready_with_gaps，明确未读、不可读、源冲突和未知；不得宣称这些内容已读完或得到确定解释。
+1. Inventory explicitly selected materials and run `check`. `build` defaults to `--renderer auto` using existing tools and recursively expands embedded DOCX. Write to a new directory; use `upgrade` for existing v1/v2 packages. Preserve originals. Do not install dependencies, register global skills, or expand external sources automatically.
+2. Run `verify`, inspect the visual index, and read the [package contract](references/package-contract.md). Successful capture does not mean the model has read the materials.
+3. Follow the [two-stage reading workflow](references/reading-workflow.md) with `review --next`, `read`, and `record`: full initial reading, then full deep reading. Commit discoveries and reading status after each batch. Continue to deep reading automatically after initial reading, without another confirmation.
+4. Actually open every visual reading unit with an available host image tool. Inspect the whole image, then details; check hidden content, arrows, captions, and text/diagram conflicts using the [multimodal protocol](references/multimodal-protocol.md). An object icon is not its contents.
+5. Check coverage and references before Q&A. `ready_with_gaps` is acceptable when unread or unreadable materials, source conflicts, and unknowns are explicit. Do not claim they have been fully read or definitively interpreted.
 
-脚本负责捕获、定位、索引、引用和版本检查；宿主模型负责真实阅读、语义解释及反证核对。脚本不调用模型 API，不自动产生全文理解。无图像能力时保留对应缺口，不用文字摘要冒充看图。
+Scripts capture, locate, index, and validate references and versions. The host model performs actual reading, semantic interpretation, and counterevidence checks. Scripts do not call model APIs or automatically understand the document. Without image capability, retain the visual gap; a text summary cannot substitute for viewing an image.
 
-## 每次问答都可扩展文档包
+## Expand the package through every Q&A session
 
-先 verify/freshness/review，query 分页检索（跨对象/附件用 --expand related），再 read 展开原文、邻段、表格、批注和视觉附件。词项未命中不是规则不存在。涉及权限、审批、金额、期限或流程边界时核查相关图及附件。
+Check `verify`, `freshness`, and `review`; retrieve paginated candidates with `query` (use `--expand related` for cross-object or attachment questions), then `read` original text, neighbors, tables, comments, and visual attachments. A search miss does not prove a rule is absent. For permissions, approvals, amounts, deadlines, or process boundaries, inspect related diagrams and attachments.
 
-按 [动态更新协议](references/dynamic-updates.md) 把有价值的新发现、术语别名、关系、修订与冲突写回。重要断言逐条绑定证据；区分规定、观察、解释、背景知识和建议。格式提示与原文分开；删除线、高亮、批注不自动代表业务批准或取消。修订保留历史，未知不默认填值，来源变化重新核验依赖。
+Persist useful discoveries, evidenced aliases, relationships, revisions, and conflicts through the [dynamic update protocol](references/dynamic-updates.md). Bind each important claim to specific evidence. Separate source requirements, observations, interpretations, background knowledge, and suggestions. Keep formatting annotations separate from original text; strikethrough, highlighting, or comments do not automatically mean business cancellation or approval. Preserve revision history, leave unknowns unresolved, and revalidate dependencies when sources change.
 
-若用户在两阶段结束前提问，可给出已核验范围的答案，同时继续阅读队列。阶段中断时从 review 状态续读；不把聊天摘要或已返回的文件路径算作阅读。
+If asked a question before both stages finish, answer within the verified scope and continue the reading queue. Resume interrupted work from `review`; a chat summary or returned file path is not a reading record.
 
-脚本入口：python -B /absolute/skill/scripts/docpack.py --help。路径作为独立参数传入。支持 TXT、Markdown、CSV/TSV、DOCX、PDF、XLSX、VSDX、PNG、JPEG、WebP；其他格式保留原件和缺口。复杂度无预设章节或知识单元上限，按批次和分页完整处理。
+CLI: `python -B /absolute/skill/scripts/docpack.py --help`. Pass paths as separate arguments. Supported inputs: TXT, Markdown, CSV/TSV, DOCX, PDF, XLSX, VSDX, PNG, JPEG, and WebP. Preserve other formats as originals with explicit gaps. Use batches and pagination for complete processing; impose no omission limit on chapters or knowledge units.
 
-质量报告分别说明材料完整性、实际阅读覆盖、解释复核和未决项。source_checked 是来源核对声明，非业务批准或自动语义正确证明；human_reviewed 只能记录实际发生的人类复核。
+Report material completeness, actual reading coverage, interpretation review, and unresolved issues separately. `source_checked` is a host declaration of source checks, not business approval or proof of semantic correctness. Record `human_reviewed` only after actual human review.
