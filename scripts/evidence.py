@@ -86,10 +86,25 @@ def operation_scope(fn):
             return fn(*args, **kwargs)
         token = _PATH_SCOPE.set({})
         try:
-            return fn(*args, **kwargs)
+            value = args[0] if args else kwargs.get('root')
+            root = Path(value).resolve() if value is not None else None
+            # Readers return a buffered result only for a coherent evidence generation.
+            before = capture_generation(root) if root else None
+            result = fn(*args, **kwargs)
+            if root and before != capture_generation(root):
+                raise ValueError('Evidence changed during reading; retry against the current package')
+            return result
         finally:
             _PATH_SCOPE.reset(token)
     return run
+
+
+def capture_generation(root):
+    root = Path(root)
+    if (root / '.evidence-update').exists():
+        raise ValueError('Evidence update pending; run enrich --recover before reading')
+    manifest = root / 'manifest.json'
+    return digest(file_bytes(manifest)) if manifest.is_file() else None
 
 
 def _scoped_resolve(path):
@@ -846,6 +861,8 @@ class Builder:
 
     def retry_pending_layouts(self):
         """Upgrade missing layouts without overwriting existing visual/native evidence."""
+        if self.renderer == 'none':
+            return
         for source in self.m['sources']:
             if source['kind'] == 'docx' and not source['layout']:
                 self.office_layout(source)

@@ -1,8 +1,20 @@
 # Dynamic expansion and knowledge updates
 
-Keywords: record, expected_revision, claims, evidence, revisions, conflicts, dependencies, replace_units.
+Keywords: enrich, recovery, record, expected_revision, claims, evidence, revisions, conflicts, dependencies, replace_units.
 
 Text, tables, and native auxiliary data are source evidence; knowledge is revisable interpretation. Do not edit `units.jsonl`, journal events, or source files directly. Update through `record`. Add explicitly selected sources or updated originals with `build --previous OLD --output NEW`; retain the old package.
+
+## Same-package evidence enrichment
+
+Use the updated global skill's `enrich --package PACK --expected-revision REV --renderer auto` for missing reading representations of already captured materials. Obtain `REV` from the latest `review`. A v3 contract is required; older contracts use new-directory `upgrade`. This entry point retains the package directory/identity and originals, automatically expands unlinked embedded DOCX and missing native sidecars, and retries absent Office layouts. It does not replace existing renditions, edit source files, add external sources, or certify model reading. `none` retains Office page gaps.
+
+Preparation uses a temporary full package copy; ensure spare disk capacity. Candidate evidence, journals, references, and old originals/renditions are verified before publication. The package writer lock serializes the operation; revision and content hashes detect conflicts. Finish old-runtime reading batches and stop other writers first. Existing scripts already running before the runtime update cannot acquire new behavior retroactively.
+
+Publication uses `.evidence-update/plan.json`, hashed before/after blobs, per-file atomic replacements, and a pending marker. **This is a recoverable multi-file transaction, not a filesystem-wide atomic rename.** Updated readers refuse pending updates and discard buffered results if the manifest generation changes. Completed replacements are archived in `history/enrichment/UPDATE_ID/before/`; the transaction retains hashes and paths. Historical knowledge events remain byte-identical; one new hash-chained deterministic event records changed units and revalidation. Rebuildable checkpoints/indexes are refreshed after publication. No model reading is inferred.
+
+New units begin unread. Changed fingerprints invalidate references as usual. Supplemental evidence also queues source-scoped existing knowledge and prior deep-reading declarations for rechecks, even when original hashes are unchanged; this conservative scope can overqueue. Initial text coverage survives when unchanged. Revise knowledge with `record` and explain the recheck; do not erase old versions. Review new pages and any affected context before confirming explanations. Knowledge remains stored while stale entries are excluded from valid retrieval.
+
+After interruption, run the updated CLI's `enrich --package PACK --recover` or `review --recover`. Recovery checks that a writer exited, validates the plan and all blobs, rejects independently changed targets, and rolls forward the prepared transaction. Interrupted preparation without a durable plan is discarded because it has not replaced package files. Relative paths permit relocation before recovery. Rebuildable indexes are recovered from evidence and events. Active or cross-OS locks are not force-removed; integrity failures require investigation. An unchanged repeat produces no new update event.
 
 ## Minimal transaction
 

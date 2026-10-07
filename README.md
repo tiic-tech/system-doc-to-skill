@@ -4,7 +4,7 @@ Turn complex system-development documents into portable local packages that pres
 
 Supports RFP, TP (technical proposal for a tender), BRD, PRD, architecture, interfaces, design, implementation, and operations materials. The skill acts as a Requirements Engineer and Multimodal Document Architect. Scripts capture, locate, version, and index; the host model reads and interprets. This independent implementation has no runtime dependency on book-to-skill, PaperIndex, vector databases, or model APIs.
 
-Version **3.0.2** retains English instructions, UI metadata, protocols, examples, and generated guidance, and fixes Office rendering failures caused by deeply nested isolated profiles on Windows/WSL. Original source content remains verbatim; Chinese and Unicode retrieval remain supported. The CLI and v3 package contract are unchanged.
+Version **3.1.0** adds same-package `enrich`: fill missing captured attachment content and Office pages, update navigation/indexes, preserve originals and existing journals, and queue new evidence and affected explanations for reading/revalidation. English guidance and verbatim source text remain supported, including Chinese/Unicode retrieval. The v3 contract and new-directory `upgrade` remain compatible.
 
 ## Acknowledgements and architectural inspiration
 
@@ -47,7 +47,20 @@ Returning materials through `read` does not mark them read. After actual initial
 
 Office conversion runs in a separate temporary workspace accessible to the renderer's OS, using short input/profile/output paths. It copies the input byte-for-byte, verifies the generated PDF, then atomically copies it into the package. Windows rendering from WSL uses the existing Windows temp directory, including when the package is on the Linux filesystem. Export diagnostics include the failure stage, tool version, arguments, source hashes, profile path, exit code, and output. Discovery is not proof of successful rendering. Pages remain derived LibreOffice layouts.
 
-Existing packages contain runtime copies. A global skill update does not repair previously missing pages: use `python -B scripts/docpack.py upgrade --package OLD_PACKAGE --output NEW_PACKAGE` with the updated skill. Keep the old package and let affected evidence undergo revalidation. New packages carry `VERSION`; `check` reports `runtime_version`.
+Existing packages contain runtime copies. Updating the global skill alone does not add missing pages. For a v3 package with unchanged originals, run the updated global skill's CLI:
+
+```bash
+python -B /absolute/updated-skill/scripts/docpack.py review --package PACKAGE
+python -B /absolute/updated-skill/scripts/docpack.py enrich --package PACKAGE --expected-revision CURRENT_REVISION --renderer auto
+python -B PACKAGE/scripts/docpack.py verify --package PACKAGE
+python -B PACKAGE/scripts/docpack.py review --package PACKAGE --next
+```
+
+`enrich` keeps the same directory and package identity. It replaces the package runtime with the current skill runtime, fills missing reading representations, and commits a deterministic evidence-update event; it does not reread materials or regenerate existing visual evidence. New pages are unread. Affected knowledge and previously deep-read units need revalidation; unaffected progress remains. Retry against the latest `review` revision after a conflict. A repeat with unchanged evidence/runtime/capabilities is a no-op.
+
+Stop other package-writing processes before enrichment; finish reading batches running an older runtime before publication. An active writer lock is rejected. Staging uses a temporary full copy, requiring spare disk space; the durable transaction and replaced-file snapshots live inside the package. Reads detect pending/changed evidence generations. After interruption use the updated CLI's `enrich --package PACKAGE --recover`, or `review --recover`. Recovery validates blobs and existing targets, then finishes the prepared transaction; it cannot repair arbitrary tampering. See the [dynamic update protocol](references/dynamic-updates.md).
+
+Use `upgrade --package OLD_PACKAGE --output NEW_PACKAGE` for older contracts or an explicit separate migration. New/changed source files still use `build --previous OLD --output NEW`, preserving the old version. Enrichment processes only already captured materials; it does not widen the selected source scope. New packages carry `VERSION`; `check` reports `runtime_version`.
 
 ## Capabilities and boundaries
 
@@ -70,7 +83,7 @@ python -B scripts/docpack.py build --input work/synthetic-inputs/requirements.do
 
 The generator demonstrates repeated embedded Word documents, merged/nested tables, inherited strikethrough and explicit overrides, hidden text, and an embedded Excel workbook with a hidden row and an uncached formula. `none` retains visual gaps. Fixtures and generated packages do not prove that host-model deep reading has occurred.
 
-The suite contains 43 original program tests and 19 v3 regression/compatibility tests (62 total). Full testing requires existing PyMuPDF. These validate deterministic behavior, not business semantic accuracy:
+The suite contains 43 original program tests, 19 v3 regression/compatibility tests, and 11 enrichment tests (73 total). Full testing requires existing PyMuPDF. These validate deterministic behavior, not business semantic accuracy:
 
 ```bash
 python -B -m unittest discover -s scripts -p 'test*.py' -v

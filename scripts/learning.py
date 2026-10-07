@@ -50,7 +50,7 @@ def atomic_json(path, value):
 
 
 @contextmanager
-def writer(root):
+def writer(root, allow_pending=False):
     """An interrupted lock is released only explicitly after checking its PID."""
     lock = Path(root) / ".knowledge-write-lock"
     try:
@@ -59,6 +59,8 @@ def writer(root):
         raise ValueError("Package writer locked; review --recover checks whether its owner exited")
     try:
         atomic_json(lock / "owner.json", {"pid": os.getpid(), "os_name": os.name, "created_at": e.now()})
+        if not allow_pending:
+            e.capture_generation(root)
         yield
     finally:
         shutil.rmtree(lock, ignore_errors=True)
@@ -454,6 +456,7 @@ def replay(root):
     units = base_units(root, manifest)
     records, history, reads, revision, previous_hash = {}, {}, {}, 0, None
     views={}
+    evidence_rechecks, reading_rechecks = {}, {}
     for path in sorted((root / "knowledge/events").glob("*.json")):
         event = e.read_json(path)
         event_hash = event.pop("event_sha256", None)
@@ -490,9 +493,17 @@ def replay(root):
         for raw_reading in event.get("reads", []):
             reading=compact(raw_reading)
             reads.setdefault(reading["unit_id"], {})[reading["stage"]] = reading
+            reading_rechecks.pop((reading["unit_id"], reading["stage"]), None)
+        for item in event.get("revalidate_records", []):
+            evidence_rechecks[item["id"]] = item
+        for item in event.get("revalidate_reads", []):
+            reading_rechecks[(item["unit_id"], item["stage"])] = item["reason"]
     current_hashes = evidence_hashes(manifest)
     for record in records.values():
         reasons = []
+        recheck = evidence_rechecks.get(record["id"])
+        if recheck and recheck["version"] == record["version"]:
+            reasons.append(recheck["reason"])
         for dependency in record.get("dependencies", []):
             if current_hashes.get(dependency["id"]) != dependency["sha256"]:
                 reasons.append("Changed/missing source or rendition: " + dependency["id"])
@@ -526,6 +537,9 @@ def replay(root):
             reading = reads.get(uid, {}).get(stage)
             if reading and reading["unit_fingerprint"] == unit["fingerprint"]:
                 coverage[uid][stage] = {**reading}
+                if (uid, stage) in reading_rechecks:
+                    coverage[uid][stage].update(status="needs_revalidation",
+                        invalidation_reason=reading_rechecks[(uid, stage)])
                 for dependency in reading.get("knowledge_dependencies", []):
                     target = records.get(dependency["id"])
                     if not target or target["version"] != dependency["version"] or target["stale_reasons"]:
@@ -549,6 +563,7 @@ def cache_signature(root):
     return {'algorithm':3,'files':{str(p.relative_to(root)):e.digest(e.file_bytes(p)) for p in paths}}
 
 
+@e.operation_scope
 def project(root, copy_result=True):
     root=e._scoped_resolve(root);signature=cache_signature(root)
     checkpoint=root/'knowledge/checkpoint.json'
@@ -809,8 +824,11 @@ def review(root, stage="auto", next_batch=False, limit=8, recover=False):
         raise ValueError("Review batch limit must be positive")
     if recover:
         recover_lock(root)
-        with writer(root):
+        with writer(root, allow_pending=True):
+            import enrichment
+            enrichment.recover_locked(root)
             rebuild(root)
+    generation = e.capture_generation(root)
     integrity = guard(root)
     state = project(root)
     summary = summarize(state)
@@ -828,6 +846,8 @@ def review(root, stage="auto", next_batch=False, limit=8, recover=False):
         summary["selected_stage"] = selected_stage
         summary["next"] = read_units(root, pending[:limit]) if pending else {"items": []}
         summary["remaining_after_batch"] = max(0, len(pending) - limit)
+    if generation != e.capture_generation(root):
+        raise ValueError("Evidence changed during review; retry")
     return summary
 
 
