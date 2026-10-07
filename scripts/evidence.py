@@ -273,7 +273,9 @@ def libreoffice_path():
 
 
 def capability_report():
-    return {'python': sys.version.split()[0], 'pymupdf': fitz_module() is not None,
+    version = Path(__file__).resolve().parent.parent/'VERSION'
+    return {'runtime_version': version.read_text().strip() if version.is_file() else 'unknown',
+            'python': sys.version.split()[0], 'pymupdf': fitz_module() is not None,
             'libreoffice': libreoffice_path(), 'native_ooxml': True,
             'ocr': False, 'installs_dependencies': False,
             'note': 'Renderer availability is not proof of visual fidelity; host vision requires an actual image tool/input.'}
@@ -282,49 +284,108 @@ def capability_report():
 _RENDERER_VERSIONS={}
 
 
+def renderer_temp_root(executable):
+    """Use the renderer OS's temp root, independently of package nesting."""
+    is_windows = str(executable).lower().endswith(('.exe', '.com'))
+    if not is_windows or sys.platform == 'win32':
+        return Path(tempfile.gettempdir()).resolve()
+    # WSL's /tmp is not a Windows drive. Ask Windows only for its temp path.
+    cmd = Path('/mnt/c/Windows/System32/cmd.exe')
+    if not cmd.is_file():
+        raise RuntimeError('Cannot locate Windows temp directory for isolated rendering')
+    result = subprocess.run([str(cmd), '/u', '/d', '/c', 'echo %TEMP%'],
+                            cwd=str(Path(executable).parent), capture_output=True, timeout=10)
+    candidates = [line.strip() for line in result.stdout.decode('utf-16-le', errors='replace').splitlines()
+                  if re.match(r'^[A-Za-z]:[\\/]', line.strip())]
+    if result.returncode != 0 or not candidates:
+        raise RuntimeError('Windows temp path detection failed; exit='+str(result.returncode))
+    root = path_input(candidates[-1])
+    if not root.is_dir():
+        raise RuntimeError('Windows temp directory is not accessible from this host')
+    return root
+
+
 def render_office(source, destination, executable, timeout=120):
+    source, destination = Path(source).resolve(), Path(destination).resolve()
+    executable = str(executable)
     destination.mkdir(parents=True, exist_ok=True)
-    is_windows = executable.lower().endswith(('.exe', '.com'))
-    with tempfile.TemporaryDirectory(prefix='lo-profile-', dir=destination) as temp:
-        profile = Path(temp)
-        # Isolated profile; never attach to or modify the user's existing Office/LO session.
-        (profile/'user').mkdir()
-        (profile/'user/registrymodifications.xcu').write_text(
-            '<?xml version="1.0"?><oor:items xmlns:oor="http://openoffice.org/2001/registry">'
-            '<item oor:path="/org.openoffice.Office.Common/Security/Scripting">'
-            '<prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop>'
-            '</item></oor:items>', encoding='utf-8')
-        profile_uri = ('file:///' + urllib.parse.quote(windows_path(profile).replace('\\', '/'), safe='/:')) if is_windows else profile.as_uri()
-        src = windows_path(source) if is_windows else str(source)
-        out = windows_path(destination) if is_windows else str(destination)
-        export_filter = 'pdf'
-        if Path(source).suffix.lower() == '.xlsx':
-            export_filter = 'pdf:calc_pdf_Export:' + json.dumps({'SinglePageSheets': {'type': 'boolean', 'value': 'true'}}, separators=(',', ':'))
-        args = [executable, '-env:UserInstallation='+profile_uri, '--headless', '--nologo',
-                '--nodefault', '--norestore', '--convert-to', export_filter, '--outdir', out, src]
-        version_key=str(executable)
-        if version_key not in _RENDERER_VERSIONS:
+    diagnostic = {'method': 'libreoffice', 'derived_layout': True,
+                  'source': str(source), 'destination': str(destination),
+                  'source_sha256': digest(file_bytes(source)), 'stage': 'temp_setup'}
+    try:
+        is_windows = executable.lower().endswith(('.exe', '.com'))
+        temp_root = renderer_temp_root(executable)
+        diagnostic['temp_root'] = str(temp_root)
+        # Short profile and staging paths avoid Windows bootstrap failures in deep packages.
+        with tempfile.TemporaryDirectory(prefix='dp-lo-', dir=temp_root) as temp:
+            work = Path(temp)
+            profile = work/'p'
+            (profile/'user').mkdir(parents=True)
+            (profile/'user/registrymodifications.xcu').write_text(
+                '<?xml version="1.0"?><oor:items xmlns:oor="http://openoffice.org/2001/registry">'
+                '<item oor:path="/org.openoffice.Office.Common/Security/Scripting">'
+                '<prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop>'
+                '</item></oor:items>', encoding='utf-8')
+            staged = work/('input'+source.suffix.lower())
+            shutil.copyfile(source, staged)
+            if digest(file_bytes(staged)) != diagnostic['source_sha256']:
+                raise RuntimeError('Staged renderer input differs from preserved source')
+            profile_uri = ('file:///' + urllib.parse.quote(windows_path(profile).replace('\\', '/'), safe='/:')) if is_windows else profile.as_uri()
+            src = windows_path(staged) if is_windows else str(staged)
+            out = windows_path(work) if is_windows else str(work)
+            export_filter = 'pdf'
+            if source.suffix.lower() == '.xlsx':
+                export_filter = 'pdf:calc_pdf_Export:' + json.dumps({'SinglePageSheets': {'type': 'boolean', 'value': 'true'}}, separators=(',', ':'))
+            args = [executable, '-env:UserInstallation='+profile_uri, '--headless', '--nologo',
+                    '--nodefault', '--norestore', '--convert-to', export_filter, '--outdir', out, src]
+            diagnostic.update(args=args, cwd=str(work), profile_path=str(profile),
+                              profile_path_chars=len(windows_path(profile) if is_windows else str(profile)),
+                              staged_source_sha256=digest(file_bytes(staged)), stage='conversion')
+            if executable not in _RENDERER_VERSIONS:
+                try:
+                    version = subprocess.run([executable, '--version'], cwd=str(work), capture_output=True, timeout=10)
+                    _RENDERER_VERSIONS[executable] = (version.stdout+version.stderr).decode('utf-8', errors='replace').strip()
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    _RENDERER_VERSIONS[executable] = 'version unavailable: '+str(exc)
+            diagnostic['version'] = _RENDERER_VERSIONS[executable]
+            result = subprocess.run(args, cwd=str(work), capture_output=True, timeout=timeout, check=False)
+            diagnostic.update(returncode=result.returncode,
+                              stdout=result.stdout.decode('utf-8', errors='replace'),
+                              stderr=result.stderr.decode('utf-8', errors='replace'))
+            pdf = work/'input.pdf'
+            if result.returncode != 0 or not pdf.is_file():
+                message = 'exit='+str(result.returncode)+'; '+(result.stdout+result.stderr).decode('utf-8', errors='replace')[-1200:]
+                raise RuntimeError('LibreOffice export failed: '+message)
+            diagnostic['stage'] = 'pdf_validation'
+            if not file_bytes(pdf).startswith(b'%PDF-'):
+                raise RuntimeError('Renderer output is not a PDF')
+            fitz = fitz_module()
+            if fitz:
+                with fitz.open(pdf) as doc:
+                    if doc.page_count < 1:
+                        raise RuntimeError('Exported PDF has no pages')
+                    diagnostic.update(pdf_validated=True, page_count=doc.page_count)
+            else:
+                diagnostic.update(pdf_validated=False, validation_gap='PyMuPDF unavailable; only PDF header checked')
+            if digest(file_bytes(source)) != diagnostic['source_sha256']:
+                raise RuntimeError('Preserved source changed during rendering')
+            diagnostic['stage'] = 'publish_pdf'
+            target = destination/(source.stem+'.pdf')
+            fd, pending = tempfile.mkstemp(prefix='.dp-pdf-', suffix='.tmp', dir=destination)
+            os.close(fd)
             try:
-                version=subprocess.run([executable,'--version'],capture_output=True,timeout=10)
-                _RENDERER_VERSIONS[version_key]=(version.stdout+version.stderr).decode('utf-8',errors='replace').strip()
-            except (OSError,subprocess.TimeoutExpired) as exc:
-                _RENDERER_VERSIONS[version_key]='version unavailable: '+str(exc)
-        diagnostic={'args':args,'version':_RENDERER_VERSIONS[version_key], 'method':'libreoffice','derived_layout':True}
-        try:
-            result = subprocess.run(args, capture_output=True, timeout=timeout, check=False)
-        except (OSError,subprocess.TimeoutExpired) as exc:
-            write_json(destination/'export-diagnostic.json',{**diagnostic,'failure':str(exc)})
-            raise
-        write_json(destination/'export-diagnostic.json', {**diagnostic, 'returncode':result.returncode, 'stdout':result.stdout.decode('utf-8',errors='replace'), 'stderr':result.stderr.decode('utf-8',errors='replace')})
-        pdf = destination/(Path(source).stem+'.pdf')
-        if result.returncode != 0 or not pdf.is_file():
-            message = 'exit='+str(result.returncode)+'; '+(result.stdout+result.stderr).decode('utf-8', errors='replace')[-1200:]
-            raise RuntimeError('LibreOffice export failed: ' + message)
-        fitz=fitz_module()
-        if fitz:
-            with fitz.open(pdf) as doc:
-                if doc.page_count < 1:raise RuntimeError('Exported PDF has no pages')
-        return pdf
+                shutil.copyfile(pdf, pending)
+                os.replace(pending, target)
+            finally:
+                if Path(pending).exists():
+                    Path(pending).unlink()
+            diagnostic.update(stage='complete', success=True, output=str(target), output_sha256=digest(file_bytes(target)))
+            write_json(destination/'export-diagnostic.json', diagnostic)
+            return target
+    except Exception as exc:
+        diagnostic.update(success=False, failure=str(exc))
+        write_json(destination/'export-diagnostic.json', diagnostic)
+        raise
 
 
 class Builder:
@@ -769,7 +830,42 @@ class Builder:
             self.pdf_pages(pdf, source['layout'], 'renders/'+source['id'], 'libreoffice')
             source['limitations'].append('LibreOffice layout is a derived presentation, not certified identical to Microsoft Word pagination/fonts. XML anchors are not automatically mapped to rendered page coordinates.')
         except Exception as exc:
-            self.issue(source['id'], 'Layout pending: '+str(exc))
+            self.issue(source['id'], 'Layout pending: '+str(exc)+'; diagnostic: renders/'+source['id']+'/export-diagnostic.json')
+
+    def office_asset_layout(self, asset):
+        try:
+            out = safe_path(self.root, 'renders/'+asset['id'])
+            pdf = render_office(safe_path(self.root, asset['original']['path']), out, libreoffice_path())
+            asset['rendered_pdf'] = self.store(self.rel(pdf), pdf.read_bytes())
+            texts = self.pdf_pages(pdf, asset['reading_versions'], 'renders/'+asset['id'], 'libreoffice')
+            asset['rendered_text'] = self.store('auxiliary/'+asset['id']+'-rendered-text.json', json.dumps(texts, ensure_ascii=False, indent=2).encode())
+            asset['visual_status'] = 'rendered_unreviewed'
+            asset['limitations'].append('Whole-sheet export requested for XLSX (one page per sheet, ignores print areas); hidden rows/columns, chart range, cell clipping and VSDX layers still require sidecar/original verification.')
+        except Exception as exc:
+            asset['limitations'].append('Content rendering pending: '+str(exc)+'; diagnostic: renders/'+asset['id']+'/export-diagnostic.json')
+
+    def retry_pending_layouts(self):
+        """Upgrade missing layouts without overwriting existing visual/native evidence."""
+        for source in self.m['sources']:
+            if source['kind'] == 'docx' and not source['layout']:
+                self.office_layout(source)
+                if source['layout']:
+                    self.m['issues'] = [i for i in self.m['issues'] if not (
+                        i['subject'] == source['id'] and i['reason'].startswith(('Layout pending:', 'Office renderer unavailable;')))]
+        sources = {s['id']:s for s in self.m['sources']}
+        for asset in self.m['assets']:
+            if asset.get('content_source_id'):
+                asset['reading_versions'] = sources[asset['content_source_id']]['layout']
+                if asset['reading_versions']:
+                    asset['visual_status'] = 'rendered_unreviewed'
+                    asset['limitations'] = [x for x in asset['limitations'] if not x.startswith('Linked document text captured; layout unavailable.')]
+            elif asset['kind'] in ('xlsx', 'vsdx') and not any(r['role'] == 'page_content' for r in asset['reading_versions']) and libreoffice_path():
+                self.office_asset_layout(asset)
+                if asset['visual_status'] == 'rendered_unreviewed':
+                    asset['limitations'] = [x for x in asset['limitations'] if not x.startswith(('Content rendering pending:', 'Original preserved; no validated content renderer'))]
+            if asset['visual_status'] == 'rendered_unreviewed':
+                self.m['issues'] = [i for i in self.m['issues'] if not (
+                    i['subject'] == asset['id'] and i['reason'].startswith('Original captured, visual content pending.'))]
 
     def process_assets(self):
         fitz = fitz_module()
@@ -808,16 +904,7 @@ class Builder:
                                {'dimensions_px': dims, 'coordinate_frame': 'original_image_pixels'})
                 a['visual_status'] = 'icon_only' if role=='icon' else 'readable_unreviewed'
             elif a['kind'] in ('xlsx','vsdx') and self.renderer!='none' and libreoffice_path():
-                try:
-                    out = safe_path(self.root, 'renders/'+a['id'])
-                    pdf = render_office(p,out,libreoffice_path())
-                    a['rendered_pdf'] = self.store(self.rel(pdf), pdf.read_bytes())
-                    texts = self.pdf_pages(pdf,a['reading_versions'],'renders/'+a['id'],'libreoffice')
-                    a['rendered_text'] = self.store('auxiliary/'+a['id']+'-rendered-text.json',json.dumps(texts,ensure_ascii=False,indent=2).encode())
-                    a['visual_status'] = 'rendered_unreviewed'
-                    a['limitations'].append('Whole-sheet export requested for XLSX (one page per sheet, ignores print areas); hidden rows/columns, chart range, cell clipping and VSDX layers still require sidecar/original verification.')
-                except Exception as exc:
-                    a['limitations'].append('Content rendering pending: '+str(exc))
+                self.office_asset_layout(a)
             elif a['kind'] in ('emf','svg') and a['occurrences'] and all(o['role']=='icon' for o in a['occurrences']):
                 a['visual_status'] = 'icon_only'
                 a['limitations'].append('Byte-preserved object icon; not a content image. Read the linked native object content instead.')

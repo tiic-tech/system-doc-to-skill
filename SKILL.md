@@ -19,6 +19,8 @@ Use for RFP, TP (technical proposal for a tender), BRD, PRD, architecture, inter
 
 Scripts capture, locate, index, and validate references and versions. The host model performs actual reading, semantic interpretation, and counterevidence checks. Scripts do not call model APIs or automatically understand the document. Without image capability, retain the visual gap; a text summary cannot substitute for viewing an image.
 
+When Office layout export fails, inspect the corresponding `renders/ID/export-diagnostic.json` and report its failure stage, exit code, and reason. Tool discovery alone does not verify conversion. Existing packages carry their own runtime copies: updating this global skill does not repair them. Use `upgrade --package OLD --output NEW` to regenerate missing renditions in a new package while preserving history and revalidating affected evidence; never patch an actively used package in place.
+
 ## Expand the package through every Q&A session
 
 Check `verify`, `freshness`, and `review`; retrieve paginated candidates with `query` (use `--expand related` for cross-object or attachment questions), then `read` original text, neighbors, tables, comments, and visual attachments. A search miss does not prove a rule is absent. For permissions, approvals, amounts, deadlines, or process boundaries, inspect related diagrams and attachments.

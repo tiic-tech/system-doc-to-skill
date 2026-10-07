@@ -45,7 +45,9 @@ docpack.py freshness --package PACK
 docpack.py build --input UPDATED ... --output NEW --previous OLD --renderer auto
 ```
 
-Package-local `scripts/docpack.py` continues independently without global installation. `none` captures sources and creates PDF/original-image reading versions, without Office layout export. LibreOffice uses an isolated profile rather than a user's running session. Preserve originals and record export timeouts/failures as limitations.
+Package-local `scripts/docpack.py` continues independently without global installation. `none` captures sources and creates PDF/original-image reading versions, without Office layout export. LibreOffice uses a short isolated profile in the renderer OS's temporary workspace rather than a user's running session or a deep package directory. Copy inputs byte-for-byte to staging, validate generated PDFs, then atomically copy outputs back. This also supports Windows renderers when WSL inputs/packages are on the Linux filesystem. Preserve originals and record export timeouts/failures as limitations. Diagnostics record the failure stage, original/staged hashes, profile length, command, version, and PDF validation result. Temporary paths in diagnostics describe past operations and are not persistent evidence paths.
+
+Updating the global skill does not update embedded package runtimes. Use the updated skill's `upgrade --package OLD --output NEW` for existing packages; preserve history, requeue changed visual dependencies, and inspect coverage rather than assuming old reading declarations cover newly rendered pages. New packages include `VERSION`; capabilities report `runtime_version` (older copies may report `unknown`).
 
 Excel export uses `SinglePageSheets` to export whole sheets without print-area slicing, but hidden rows/columns may still be invisible. `cellview` renders native cells at selected coordinates as `structured_cell_view`: auxiliary evidence, not the author's original visible layout, with no formula calculation. LibreOffice itself may recalculate on opening/export; compare original caches and exports if numbers differ rather than automatically accepting recalculated values.
 

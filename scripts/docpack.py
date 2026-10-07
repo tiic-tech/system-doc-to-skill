@@ -23,6 +23,9 @@ def runtime(root):
     references = directory.parent / "references"
     if references.exists() and references.resolve() != (Path(root) / "references").resolve():
         shutil.copytree(references, Path(root) / "references", dirs_exist_ok=True)
+    version = directory.parent / "VERSION"
+    if version.is_file() and version.resolve() != (Path(root) / "VERSION").resolve():
+        shutil.copyfile(version, Path(root) / "VERSION")
 
 
 def project_entry(root):
@@ -114,6 +117,8 @@ def upgrade(package, output):
     builder.content_processed={a["id"] for a in m["assets"] if a['kind']!='docx' or a.get('content_source_id')}
     builder.input_locations={};builder.input_aliases={};builder.occurrence_count=max([int(o["id"][1:]) for a in m["assets"] for o in a["occurrences"]]+[0])
     builder.process_assets()
+    builder.retry_pending_layouts()
+    m["capabilities"].update(core.capability_report(), layout_requested=True)
     core.write_json(new/"manifest.json",m)
     knowledge.initialize(new)
     project_entry(new)

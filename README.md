@@ -4,7 +4,7 @@ Turn complex system-development documents into portable local packages that pres
 
 Supports RFP, TP (technical proposal for a tender), BRD, PRD, architecture, interfaces, design, implementation, and operations materials. The skill acts as a Requirements Engineer and Multimodal Document Architect. Scripts capture, locate, version, and index; the host model reads and interprets. This independent implementation has no runtime dependency on book-to-skill, PaperIndex, vector databases, or model APIs.
 
-Version **3.0.1** provides English instructions, UI metadata, protocols, examples, and generated package guidance. Original source content remains verbatim; Chinese and Unicode retrieval remain supported. The CLI and v3 package contract are unchanged.
+Version **3.0.2** retains English instructions, UI metadata, protocols, examples, and generated guidance, and fixes Office rendering failures caused by deeply nested isolated profiles on Windows/WSL. Original source content remains verbatim; Chinese and Unicode retrieval remain supported. The CLI and v3 package contract are unchanged.
 
 ## Acknowledgements and architectural inspiration
 
@@ -45,6 +45,10 @@ Returning materials through `read` does not mark them read. After actual initial
 
 `build --renderer auto` probes existing tools by default; `none` and `libreoffice` are also available. `none` does not generate Office pages and retains the corresponding gaps. Update sources with `build --input UPDATED_MATERIALS --previous OLD_PACKAGE --output NEW_PACKAGE`; preserve history without directly editing originals or journal events.
 
+Office conversion runs in a separate temporary workspace accessible to the renderer's OS, using short input/profile/output paths. It copies the input byte-for-byte, verifies the generated PDF, then atomically copies it into the package. Windows rendering from WSL uses the existing Windows temp directory, including when the package is on the Linux filesystem. Export diagnostics include the failure stage, tool version, arguments, source hashes, profile path, exit code, and output. Discovery is not proof of successful rendering. Pages remain derived LibreOffice layouts.
+
+Existing packages contain runtime copies. A global skill update does not repair previously missing pages: use `python -B scripts/docpack.py upgrade --package OLD_PACKAGE --output NEW_PACKAGE` with the updated skill. Keep the old package and let affected evidence undergo revalidation. New packages carry `VERSION`; `check` reports `runtime_version`.
+
 ## Capabilities and boundaries
 
 - Recursively expands embedded DOCX, deduplicates by content hash, and preserves every occurrence and parent context. An icon is not attachment content evidence.
@@ -66,7 +70,7 @@ python -B scripts/docpack.py build --input work/synthetic-inputs/requirements.do
 
 The generator demonstrates repeated embedded Word documents, merged/nested tables, inherited strikethrough and explicit overrides, hidden text, and an embedded Excel workbook with a hidden row and an uncached formula. `none` retains visual gaps. Fixtures and generated packages do not prove that host-model deep reading has occurred.
 
-The suite contains 43 original program tests and 14 v3 regression/compatibility tests (57 total). Full testing requires existing PyMuPDF. These validate deterministic behavior, not business semantic accuracy:
+The suite contains 43 original program tests and 19 v3 regression/compatibility tests (62 total). Full testing requires existing PyMuPDF. These validate deterministic behavior, not business semantic accuracy:
 
 ```bash
 python -B -m unittest discover -s scripts -p 'test*.py' -v

@@ -165,5 +165,76 @@ class V3Tests(unittest.TestCase):
             with self.assertRaises(RuntimeError):d.core.render_office(source,self.root/'render','libreoffice')
         diagnostic=d.read_json(self.root/'render/export-diagnostic.json');self.assertEqual(diagnostic['returncode'],9)
         self.assertIn('filter unavailable',diagnostic['stderr']);self.assertEqual(source.read_bytes(),b'original fixture')
+    def test_windows_renderer_stages_linux_source_outside_deep_package(self):
+        source=self.root/'linux-source.docx';source.write_bytes(b'unchanged source')
+        destination=self.root/('deep-'*20)/'renders';temp_root=self.root/'short';temp_root.mkdir()
+        calls=[]
+        def run(args,**kwargs):
+            calls.append((args,kwargs))
+            if '--convert-to' in args:
+                work=Path(kwargs['cwd'])
+                self.assertTrue(work.is_relative_to(temp_root));self.assertFalse(work.is_relative_to(destination))
+                self.assertEqual((work/'input.docx').read_bytes(),source.read_bytes())
+                self.assertIn('MacroSecurityLevel',(work/'p/user/registrymodifications.xcu').read_text())
+                doc=d.fitz_module().open();doc.new_page();doc.save(work/'input.pdf');doc.close()
+            return type('Result',(),{'returncode':0,'stdout':b'Fixture renderer','stderr':b''})()
+        with patch.object(d.core,'renderer_temp_root',return_value=temp_root), patch.object(d.core,'windows_path',side_effect=lambda p:'C:\\temp\\'+Path(p).name), patch.object(d.core.subprocess,'run',side_effect=run):
+            result=d.core.render_office(source,destination,'fixture-soffice.com')
+        diagnostic=d.read_json(destination/'export-diagnostic.json')
+        self.assertEqual(result.name,'linux-source.pdf');self.assertTrue(diagnostic['pdf_validated'])
+        self.assertEqual(diagnostic['page_count'],1);self.assertEqual(diagnostic['source_sha256'],diagnostic['staged_source_sha256'])
+        self.assertFalse(list(temp_root.iterdir()));self.assertEqual(source.read_bytes(),b'unchanged source')
+        conversion=next(args for args,kwargs in calls if '--convert-to' in args)
+        self.assertEqual(conversion[-1],'C:\\temp\\input.docx')
+    def test_invalid_render_does_not_replace_existing_pdf(self):
+        source=self.root/'file.docx';source.write_bytes(b'original')
+        destination=self.root/'render';destination.mkdir();target=destination/'file.pdf';target.write_bytes(b'existing evidence')
+        def run(args,**kwargs):
+            if '--convert-to' in args:(Path(kwargs['cwd'])/'input.pdf').write_bytes(b'not a pdf')
+            return type('Result',(),{'returncode':0,'stdout':b'','stderr':b''})()
+        with patch.object(d.core.subprocess,'run',side_effect=run):
+            with self.assertRaisesRegex(RuntimeError,'not a PDF'):d.core.render_office(source,destination,'fixture-linux-soffice')
+        self.assertEqual(target.read_bytes(),b'existing evidence')
+        diagnostic=d.read_json(destination/'export-diagnostic.json');self.assertEqual(diagnostic['stage'],'pdf_validation');self.assertFalse(diagnostic['success'])
+    def test_temp_setup_failure_is_diagnosed(self):
+        source=self.root/'file.docx';source.write_bytes(b'original')
+        with patch.object(d.core,'renderer_temp_root',side_effect=RuntimeError('Temp unavailable')):
+            with self.assertRaisesRegex(RuntimeError,'Temp unavailable'):d.core.render_office(source,self.root/'render','fixture-soffice.com')
+        diagnostic=d.read_json(self.root/'render/export-diagnostic.json')
+        self.assertEqual(diagnostic['stage'],'temp_setup');self.assertFalse(diagnostic['success']);self.assertIn('Temp unavailable',diagnostic['failure'])
+    def test_windows_temp_detection_preserves_unicode_and_spaces(self):
+        temp_path='C:\\Users\\Example \u7528\u6237\\AppData\\Local\\Temp'
+        result=type('Result',(),{'returncode':0,'stdout':(temp_path+'\r\n').encode('utf-16-le'),'stderr':b''})()
+        with patch.object(d.core.Path,'is_file',return_value=True), patch.object(d.core.subprocess,'run',return_value=result), patch.object(d.core,'path_input',return_value=self.root) as converted:
+            self.assertEqual(d.core.renderer_temp_root('/mnt/c/tools/soffice.com'),self.root)
+        converted.assert_called_once_with(temp_path)
+    def test_upgrade_recovers_missing_layouts_without_upgrading_read_declarations(self):
+        import test_evidence
+        child=self.root/'child.docx';document(child,'Annex rule.')
+        main=self.root/'main.docx';document(main,'Main scope.',child.read_bytes())
+        workbook=self.root/'matrix.xlsx';test_evidence.xlsx(workbook)
+        old=self.root/'old';d.build([str(main),str(workbook)],old,'Missing layouts',renderer='none')
+        k=d.knowledge;unit=next(u for u in k.project(old)['units'].values() if u['kind']=='clause')
+        receipt=k.read_units(old,[unit['id']]);k.commit(old,{'expected_revision':0,'model':'Fixture','receipt_ids':[receipt['receipt_id']],
+            'reads':[{'unit_id':unit['id'],'stage':'initial','status':'read','notes':'Actually read text fixture'}]})
+        event=next((old/'knowledge/events').glob('*.json'));history=event.read_bytes()
+        def render(source,destination,executable,timeout=120):
+            destination.mkdir(parents=True,exist_ok=True);target=destination/(source.stem+'.pdf')
+            doc=d.fitz_module().open();doc.new_page();doc.save(target);doc.close();return target
+        new=self.root/'new'
+        with patch.object(d.core,'libreoffice_path',return_value='fixture-soffice'),patch.object(d.core,'render_office',side_effect=render):
+            result=d.upgrade(old,new)
+        self.assertTrue(result['pass'],result)
+        self.assertEqual(event.read_bytes(),history);self.assertEqual((new/'knowledge/events'/event.name).read_bytes(),history)
+        manifest=d.read_json(new/'manifest.json');self.assertTrue(all(s['layout'] for s in manifest['sources'] if s['kind']=='docx'))
+        asset=next(a for a in manifest['assets'] if a['kind']=='docx')
+        child_source=next(s for s in manifest['sources'] if s['id']==asset['content_source_id'])
+        self.assertEqual(asset['reading_versions'],child_source['layout'])
+        self.assertTrue(any(r['role']=='page_content' for a in manifest['assets'] if a['kind']=='xlsx' for r in a['reading_versions']))
+        self.assertEqual((new/'VERSION').read_text().strip(),manifest['capabilities']['runtime_version'])
+        state=k.project(new);visuals=[u for u in state['units'].values() if u['kind']=='visual']
+        self.assertTrue(visuals)
+        self.assertTrue(all(state['coverage'][u['id']]['initial']['status']=='unread' for u in visuals))
+        self.assertEqual(state['coverage'][unit['id']]['initial']['status'],'read')
 
 if __name__=='__main__':unittest.main()
